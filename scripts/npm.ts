@@ -35,6 +35,11 @@ await build({
     const pkg = JSON.parse(Deno.readTextFileSync('npm/package.json'))
     pkg.peerDependencies = pkg.dependencies
     delete pkg.dependencies
+    // map dependencies to peerDependenciesMeta
+    pkg.peerDependenciesMeta = {}
+    for (const [key] of Object.entries<any>(pkg.peerDependencies)) {
+      pkg.peerDependenciesMeta[key] = { optional: true }
+    }
     // remove extension specifiers from exports and add types
     for (const [key, value] of Object.entries<any>(pkg.exports)) {
       const newKey = key.replace(/\.js$/, '')

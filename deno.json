@@ -9,7 +9,8 @@
     "lib": ["deno.ns", "dom", "dom.iterable"]
   },
   "tasks": {
-    "build": "deno run -A scripts/npm.ts"
+    "build": "deno run -A scripts/npm.ts",
+    "publish": "cd ./npm && npm publish --access public"
   },
   "lint": {
     "exclude": ["npm"],
