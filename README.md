@@ -1,6 +1,6 @@
 # @westbrookdaniel/form
 
-Framework agnostic uncontrolled form utilities. Available for node and deno (but requires browser APIs).
+Framework agnostic uncontrolled form utilities. Available on **npm** and via github for **deno** (but requires browser APIs).
 
 Framework adapters are only currently available for React and Preact.
 
