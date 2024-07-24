@@ -1,6 +1,6 @@
 {
   "name": "@westbrookdaniel/form",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Framework agnostic form library",
   "author": "Daniel Westbrook",
   "license": "MIT",
@@ -26,6 +26,7 @@
   "files": [
     "dist",
     "package.json",
+    "LICENSE",
     "README.md"
   ],
   "scripts": {
