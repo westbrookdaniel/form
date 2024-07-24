@@ -1,5 +1,5 @@
 export type Validator<TFormData> = (
-  data: TFormData
+  data: Partial<TFormData>
 ) =>
   | Promise<string | null | undefined | boolean>
   | string
@@ -45,23 +45,28 @@ export type FieldErrors<TFormData> = Partial<Record<keyof TFormData, string>>;
  * const form = new Form<UserFormData>({
  *   fields: {
  *     name: [
+ *       // These typeof checks are not necessary most real forms, but they are
+ *       // here to guard against invalid data types being passed to the form
+ *       ({ name }) => typeof name !== "string",
  *       (form) => form.name === "" && (form.name = null),
- *       () => new Promise((r) => setTimeout(r, 1000)),
+ *       () => new Promise((r) => setTimeout(r, 1)),
  *     ],
  *     email: [
- *       ({ email }) => (email.trim() ? null : "Required"),
+ *       ({ email }) => typeof email !== "string",
+ *       ({ email }) => (email?.trim() ? null : "Required"),
  *       ({ email }) =>
- *         /^[^@]+@[^@]+\.[^@]+$/g.test(email) ? null : "Invalid email",
+ *         /^[^@]+@[^@]+\.[^@]+$/g.test(email ?? "") ? null : "Invalid email",
  *     ],
  *     password: [
- *       ({ password }) => (password.trim() ? null : "Required"),
- *       ({ password }) => (password.length > 8 ? null : "> 8 characters"),
+ *       ({ password }) => typeof password !== "string",
+ *       ({ password }) => (password?.trim() ? null : "Required"),
+ *       ({ password }) => (password?.length ?? 0 > 8 ? null : "> 8 characters"),
  *     ],
  *   },
  *   form: [
  *     // Validate the password doesn't include the name
  *     ({ password, name }) =>
- *       name && password.includes(name)
+ *       name && password?.includes(name)
  *         ? "Password cannot contain your name"
  *         : null,
  *   ],

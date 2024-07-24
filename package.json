@@ -1,7 +1,7 @@
 {
   "name": "@westbrookdaniel/form",
   "version": "0.1.0",
-  "description": "A form library",
+  "description": "Framework agnostic form library",
   "author": "Daniel Westbrook",
   "license": "MIT",
   "repository": {

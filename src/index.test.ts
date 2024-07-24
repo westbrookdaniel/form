@@ -16,19 +16,19 @@ const form = new Form<UserFormData>({
     ],
     email: [
       ({ email }) => typeof email !== "string",
-      ({ email }) => (email.trim() ? null : "Required"),
+      ({ email }) => (email?.trim() ? null : "Required"),
       ({ email }) =>
-        /^[^@]+@[^@]+\.[^@]+$/g.test(email) ? null : "Invalid email",
+        /^[^@]+@[^@]+\.[^@]+$/g.test(email ?? "") ? null : "Invalid email",
     ],
     password: [
       ({ password }) => typeof password !== "string",
-      ({ password }) => (password.trim() ? null : "Required"),
-      ({ password }) => (password.length > 8 ? null : "> 8 characters"),
+      ({ password }) => (password?.trim() ? null : "Required"),
+      ({ password }) => (password?.length ?? 0 > 8 ? null : "> 8 characters"),
     ],
   },
   form: [
     ({ password, name }) =>
-      name && password.includes(name)
+      name && password?.includes(name)
         ? "Password cannot contain your name"
         : null,
   ],
@@ -213,4 +213,23 @@ test("validate should use custom default message for required fields", async () 
   expect(customForm.fieldErrors.email).toBe("email is mandatory");
   expect(customForm.fieldErrors.password).toBe("password is mandatory");
   expect(customForm.isValid).toBe(false);
+});
+
+test("validate should not expand dot notation in field names", async () => {
+  const dotNotationForm = new Form({
+    fields: {
+      "user.name": [({ "user.name": name }) => !name && "Required"],
+      "user.email": [({ "user.email": email }) => !email && "Required"],
+      "user.password": [
+        ({ "user.password": password }) => !password && "Required",
+      ],
+    },
+  });
+
+  const data = { "user.name": "", "user.email": "", "user.password": "" };
+  await dotNotationForm.validate(data);
+  expect(dotNotationForm.fieldErrors["user.name"]).toBe("Required");
+  expect(dotNotationForm.fieldErrors["user.email"]).toBe("Required");
+  expect(dotNotationForm.fieldErrors["user.password"]).toBe("Required");
+  expect(dotNotationForm.isValid).toBe(false);
 });
