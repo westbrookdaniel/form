@@ -1,5 +1,7 @@
 import { test, expect, mock, afterEach } from "bun:test";
 import { Form } from "./index";
+import { z } from "zod";
+import { zodAdaptor } from "./adaptors/zod";
 
 interface UserFormData {
   name: string | null;
@@ -381,4 +383,31 @@ test("submitting should be false after a thrown validation", async () => {
   expect(form.submitting).toBe(false);
 
   console.error = originalConsoleError;
+});
+
+test("validate should work with zodAdaptor", async () => {
+  const schema = z.object({
+    name: z.string().min(1, "Name is required"),
+    email: z.string().email("Invalid email address"),
+    password: z.string().min(6, "Password must be at least 6 characters long"),
+  });
+
+  const form = new Form({
+    adaptor: zodAdaptor({ schema }),
+  });
+
+  const data = {
+    name: "",
+    email: "invalid-email",
+    password: "123",
+  };
+
+  await form.validate(data);
+
+  expect(form.fieldErrors.name).toBe("Name is required");
+  expect(form.fieldErrors.email).toBe("Invalid email address");
+  expect(form.fieldErrors.password).toBe(
+    "Password must be at least 6 characters long"
+  );
+  expect(form.isValid).toBe(false);
 });
