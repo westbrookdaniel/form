@@ -32,6 +32,7 @@ constructor({ fields, loose, form, defaultMessage }: Options<TFormData>)
 - `handle<T = void>(fn: FormHandler<TFormData, T>): (e: SubmitEvent) => Promise<T>`: Handles form submission.
 - `assert(): TFormData`: Asserts that the form is valid and returns the form data.
 - `reset(): void`: Resets the form state.
+- `subscribe(key: "fieldErrors" | "submitting" | "data" | "formError" | "isValid", callback: (value: any) => void): () => void`: Subscribes to changes in form state.
 
 ## Usage
 
@@ -62,7 +63,7 @@ const form = new Form<UserFormData>({
     password: [
       ({ password }) => typeof password !== "string",
       ({ password }) => (password?.trim() ? null : "Required"),
-      ({ password }) => (password?.length ?? 0 > 8 ? null : "> 8 characters"),
+      ({ password }) => ((password?.length ?? 0) > 8 ? null : "> 8 characters"),
     ],
   },
   form: [
@@ -105,6 +106,55 @@ const submit = form.handle(async (formData, formElement) => {
   )}
 </form>;
 ```
+
+### Vanilla JS Integration
+
+Here's an example of how to use the form library with vanilla JavaScript:
+
+```ts
+import { Form } from "@westbrookdaniel/form";
+
+const form = new Form({
+  fields: {
+    email: [
+      ({ email }) => (email?.trim() ? null : "Required"),
+      ({ email }) =>
+        /^[^@]+@[^@]+\.[^@]+$/g.test(email ?? "") ? null : "Invalid email",
+    ],
+    password: [
+      ({ password }) => (password?.trim() ? null : "Required"),
+      ({ password }) => ((password?.length ?? 0) > 8 ? null : "> 8 characters"),
+    ],
+  },
+});
+
+const emailError = document.getElementById("email-error");
+const passwordError = document.getElementById("password-error");
+const submitButton = document.getElementById("submit-button");
+
+form.subscribe("fieldErrors", (errors) => {
+  emailError.textContent = errors.email || "";
+  passwordError.textContent = errors.password || "";
+});
+
+form.subscribe("submitting", (submitting) => {
+  submitButton.disabled = submitting;
+  submitButton.textContent = submitting ? "Submitting..." : "Submit";
+});
+
+const handleSubmit = form.handle(async (formData) => {
+  await form.validate(formData);
+
+  if (form.hasErrors()) return;
+
+  const data = form.assert();
+  console.log(data);
+});
+
+document.querySelector("form").addEventListener("submit", handleSubmit);
+```
+
+This example demonstrates how to use the `Form` class with vanilla JavaScript, including subscribing to form state changes and handling form submission.
 
 ## License
 

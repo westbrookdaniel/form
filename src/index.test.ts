@@ -23,7 +23,7 @@ const form = new Form<UserFormData>({
     password: [
       ({ password }) => typeof password !== "string",
       ({ password }) => (password?.trim() ? null : "Required"),
-      ({ password }) => (password?.length ?? 0 > 8 ? null : "> 8 characters"),
+      ({ password }) => ((password?.length ?? 0) > 8 ? null : "> 8 characters"),
     ],
   },
   form: [
@@ -164,26 +164,41 @@ test("validate should handle extremely long input", async () => {
 });
 
 test("validate should handle concurrent validations", async () => {
+  const concurrentForm = new Form<UserFormData>({
+    fields: {
+      name: [
+        ({ name }) => typeof name !== "string",
+        (form) => form.name === "" && (form.name = null),
+        () => new Promise((r) => setTimeout(r, 500)),
+      ],
+    },
+  });
+
   const validations = [
-    form.validate({
+    concurrentForm.validate({
       name: "John",
-      email: "john@example.com",
-      password: "password123",
     }),
-    form.validate({
-      name: "Jane",
-      email: "jane@example.com",
-      password: "janepwd",
-    }),
-    form.validate({ name: "Bob", email: "bob@invalid", password: "bob" }),
+    new Promise<void>((resolve) =>
+      setTimeout(
+        () =>
+          resolve(
+            concurrentForm.validate({
+              name: "Jane",
+            })
+          ),
+        100
+      )
+    ),
+    new Promise<void>((resolve) =>
+      setTimeout(() => resolve(concurrentForm.validate({})), 200)
+    ),
   ];
 
   await Promise.all(validations);
 
   // The last validation should be the one that sets the final state
-  expect(form.fieldErrors.email).toBe("Invalid email");
-  expect(form.fieldErrors.password).toBe("> 8 characters");
-  expect(form.isValid).toBe(false);
+  expect(concurrentForm.fieldErrors.name).toBe("Required");
+  expect(concurrentForm.isValid).toBe(false);
 });
 
 test("validate should use default message for required fields", async () => {
@@ -232,4 +247,138 @@ test("validate should not expand dot notation in field names", async () => {
   expect(dotNotationForm.fieldErrors["user.email"]).toBe("Required");
   expect(dotNotationForm.fieldErrors["user.password"]).toBe("Required");
   expect(dotNotationForm.isValid).toBe(false);
+});
+
+test("subscribe should notify subscribers on field change", async () => {
+  const mockCallback = mock();
+  const unsubscribe = form.subscribe("data", mockCallback);
+
+  const data = {
+    name: "John",
+    email: "john@example.com",
+    password: "password123",
+  };
+  await form.validate(data);
+  form.assert(); // Ensure form is valid
+
+  expect(form.data.email).toBe("john@example.com");
+  expect(mockCallback).toBeCalledTimes(1);
+
+  unsubscribe();
+});
+
+test("unsubscribe should stop notifying subscribers", async () => {
+  const mockCallback = mock();
+  const unsubscribe = form.subscribe("data", mockCallback);
+
+  unsubscribe();
+
+  const data = {
+    name: "John",
+    email: "john@example.com",
+    password: "password123",
+  };
+  await form.validate(data);
+
+  expect(mockCallback).not.toHaveBeenCalled();
+});
+
+test("subscribe should notify subscribers on fieldErrors change", async () => {
+  const mockCallback = mock();
+  const unsubscribe = form.subscribe("fieldErrors", mockCallback);
+
+  const data = {
+    email: "",
+    password: "",
+  };
+  await form.validate(data);
+
+  expect(form.fieldErrors.name).toBe("Required");
+  expect(mockCallback).toBeCalledTimes(1);
+
+  unsubscribe();
+});
+
+test("subscribe should notify subscribers on submitting change", async () => {
+  const mockCallback = mock();
+  const unsubscribe = form.subscribe("submitting", mockCallback);
+
+  const data = {
+    name: "John",
+    email: "john@example.com",
+    password: "password123",
+  };
+
+  await form.handle(async () => {
+    await form.validate(data);
+  })({ preventDefault: () => {} } as SubmitEvent);
+
+  expect(mockCallback).toBeCalledTimes(2); // Called once for true and once for false
+  expect(mockCallback).nthCalledWith(1, true);
+  expect(mockCallback).nthCalledWith(2, false);
+
+  unsubscribe();
+});
+
+test("subscribe should notify subscribers on formError change", async () => {
+  const mockCallback = mock();
+  const unsubscribe = form.subscribe("formError", mockCallback);
+
+  const data = {
+    name: "John",
+    email: "john@example.com",
+    password: "John",
+  };
+  await form.validate(data);
+
+  expect(form.formError).toBe("Password cannot contain your name");
+  expect(mockCallback).toBeCalledTimes(1);
+
+  unsubscribe();
+});
+
+test("subscribe should notify subscribers on isValid change", async () => {
+  const mockCallback = mock();
+  const unsubscribe = form.subscribe("isValid", mockCallback);
+
+  const data = {
+    name: "John",
+    email: "john@example.com",
+    password: "password123",
+  };
+  await form.validate(data);
+
+  expect(form.isValid).toBe(true);
+  expect(mockCallback).toBeCalledTimes(1);
+
+  unsubscribe();
+});
+
+test("submitting should be false after a thrown validation", async () => {
+  const originalConsoleError = console.error;
+  console.error = mock();
+
+  const form = new Form({
+    fields: {
+      email: [
+        ({ email }) => {
+          if (!email) throw new Error("Email is required");
+          return null;
+        },
+      ],
+    },
+  });
+
+  const data = {
+    email: "",
+  };
+
+  // Note that the error also doesn't bubble up
+  await form.handle(async () => {
+    await form.validate(data);
+  })({ preventDefault: () => {} } as SubmitEvent);
+
+  expect(form.submitting).toBe(false);
+
+  console.error = originalConsoleError;
 });

@@ -18,11 +18,11 @@ export type Options<TFormData> = {
   defaultMessage?: (field: keyof TFormData) => string;
 };
 
-export type FormHandler<TFormData, T> = (
+export type FormHandler<TFormData> = (
   formData: TFormData,
   formElement: HTMLFormElement,
   e: SubmitEvent
-) => Promise<T>;
+) => Promise<void>;
 
 export type FieldErrors<TFormData> = Partial<Record<keyof TFormData, string>>;
 
@@ -60,7 +60,7 @@ export type FieldErrors<TFormData> = Partial<Record<keyof TFormData, string>>;
  *     password: [
  *       ({ password }) => typeof password !== "string",
  *       ({ password }) => (password?.trim() ? null : "Required"),
- *       ({ password }) => (password?.length ?? 0 > 8 ? null : "> 8 characters"),
+ *       ({ password }) => ((password?.length ?? 0) > 8 ? null : "> 8 characters"),
  *     ],
  *   },
  *   form: [
@@ -113,6 +113,7 @@ export class Form<TFormData extends Record<string, any>> {
   private fields: Fields<TFormData>;
   private loose: boolean;
   private formValidators: Validator<TFormData>[];
+  private subscribers: Record<string, Set<(value: any) => void>> = {};
 
   fieldErrors: FieldErrors<TFormData> = {};
   submitting = false;
@@ -130,6 +131,42 @@ export class Form<TFormData extends Record<string, any>> {
     this.defaultMessage = defaultMessage ?? (() => "Required");
   }
 
+  subscribe(
+    key: "fieldErrors" | "submitting" | "data" | "formError" | "isValid",
+    callback: (value: any) => void
+  ): () => void {
+    if (
+      !["fieldErrors", "submitting", "data", "formError", "isValid"].includes(
+        key
+      )
+    ) {
+      throw new Error(
+        `Invalid key: ${key}. Valid keys are: fieldErrors, submitting, data, formError, isValid`
+      );
+    }
+
+    if (!this.subscribers[key]) this.subscribers[key] = new Set();
+    this.subscribers[key].add(callback);
+    return () => {
+      this.subscribers[key]?.delete(callback);
+    };
+  }
+
+  private notifySubscribers(changedKeys: string[] = []): void {
+    changedKeys.forEach((key) => {
+      const value = this.getNestedValue(key);
+      Object.keys(this.subscribers).forEach((subscriberKey) => {
+        if (subscriberKey === key) {
+          this.subscribers[subscriberKey].forEach((cb) => cb(value));
+        }
+      });
+    });
+  }
+
+  private getNestedValue(key: string): any {
+    return key.split(".").reduce((obj, k) => obj && obj[k], this as any);
+  }
+
   async validate(data: unknown): Promise<void> {
     // Cancel any pending validation
     if (this.lastValidateController) {
@@ -140,7 +177,7 @@ export class Form<TFormData extends Record<string, any>> {
     this.lastValidateController = new AbortController();
     const signal = this.lastValidateController.signal;
 
-    this.reset();
+    this.reset(true);
     const d = structuredClone(data) as TFormData;
 
     // quick check data is an object
@@ -207,6 +244,9 @@ export class Form<TFormData extends Record<string, any>> {
     if (!this.hasErrors()) this.isValid = true;
 
     this.lastValidateController = null; // Clear the AbortController reference
+
+    // Notify subscribers after validation
+    this.notifySubscribers(["fieldErrors", "data", "formError", "isValid"]);
   }
 
   hasErrors(field?: keyof TFormData): boolean {
@@ -214,16 +254,18 @@ export class Form<TFormData extends Record<string, any>> {
     return Object.keys(this.fieldErrors).length > 0 || !!this.formError;
   }
 
-  handle<T = void>(
-    fn: FormHandler<TFormData, T>
-  ): (e: SubmitEvent) => Promise<T> {
+  handle(fn: FormHandler<TFormData>): (e: SubmitEvent) => Promise<void> {
     return async (e: SubmitEvent) => {
-      this.submitting = true;
-      e.preventDefault();
-      const data = Form.data(e) as TFormData;
-      const o = await fn(data, e.target as HTMLFormElement, e);
-      this.submitting = false;
-      return o;
+      try {
+        this.submitting = true;
+        this.notifySubscribers(["submitting"]);
+        e.preventDefault();
+        const data = Form.data(e) as TFormData;
+        await fn(data, e.target as HTMLFormElement, e);
+      } finally {
+        this.submitting = false;
+        this.notifySubscribers(["submitting"]);
+      }
     };
   }
 
@@ -239,12 +281,14 @@ export class Form<TFormData extends Record<string, any>> {
     return this.data as TFormData;
   }
 
-  reset(): void {
+  reset(dontNotify?: boolean): void {
     this.fieldErrors = {};
-    this.submitting = false;
     this.data = {};
     this.formError = null;
     this.isValid = false;
+    if (!dontNotify) {
+      this.notifySubscribers(["fieldErrors", "data", "formError", "isValid"]);
+    }
   }
 
   static data(e: SubmitEvent): Record<string, any> {
