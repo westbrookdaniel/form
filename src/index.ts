@@ -1,11 +1,11 @@
 export type Validator<TFormData> = (
   data: TFormData
 ) =>
-  | Promise<string | null | undefined | false>
+  | Promise<string | null | undefined | boolean>
   | string
   | null
   | undefined
-  | false;
+  | boolean;
 
 export type Fields<TFormData> = Partial<{
   [K in keyof TFormData]: Validator<TFormData>[];
@@ -15,6 +15,7 @@ export type Options<TFormData> = {
   fields: Fields<TFormData>;
   loose?: boolean;
   form?: Validator<TFormData>[];
+  defaultMessage?: (field: keyof TFormData) => string;
 };
 
 export type FormHandler<TFormData, T> = (
@@ -77,7 +78,7 @@ export type FieldErrors<TFormData> = Partial<Record<keyof TFormData, string>>;
  *
  *   console.log(data);
  * });
- * 
+ *
  * // ...
  *
  * <form onSubmit={submit} noValidate>
@@ -108,54 +109,79 @@ export class Form<TFormData extends Record<string, any>> {
   private loose: boolean;
   private formValidators: Validator<TFormData>[];
 
-  fieldErrors: FieldErrors<TFormData> = {}; // state
-  submitting = false; // state
+  fieldErrors: FieldErrors<TFormData> = {};
+  submitting = false;
   data: Partial<TFormData> = {};
-  formError: string | null = null; // new state for form-level error
-  isValid = false; // new state to track validation
+  formError: string | null = null;
+  isValid = false;
+  defaultMessage: (field: keyof TFormData) => string;
 
-  constructor({ fields, loose, form }: Options<TFormData>) {
+  private lastValidateController: AbortController | null = null;
+
+  constructor({ fields, loose, form, defaultMessage }: Options<TFormData>) {
     this.fields = fields;
     this.loose = loose ?? false;
     this.formValidators = form ?? [];
+    this.defaultMessage = defaultMessage ?? (() => "Required");
   }
 
-  async validate(data: TFormData): Promise<void> {
-    // Reset the form state
-    this.fieldErrors = {};
-    this.data = {};
-    this.formError = null;
-    this.isValid = false;
-    const d = structuredClone(data);
+  async validate(data: unknown): Promise<void> {
+    // Cancel any pending validation
+    if (this.lastValidateController) {
+      this.lastValidateController.abort();
+    }
+
+    // Create a new AbortController for this validation
+    this.lastValidateController = new AbortController();
+    const signal = this.lastValidateController.signal;
+
+    this.reset();
+    const d = structuredClone(data) as TFormData;
+
+    // quick check data is an object
+    if (typeof d !== "object" || d === null) {
+      throw new Error("Data is not an object");
+    }
 
     // field-level validation
     for (const field in this.fields) {
       const validators = this.fields[field];
       if (!validators) continue;
       for (const v of validators) {
+        if (signal.aborted) return; // Check if validation has been cancelled
         try {
           const error = await v(d);
           if (error) {
-            this.fieldErrors[field] = error;
+            if (error === true) {
+              this.fieldErrors[field] = this.defaultMessage(field);
+            } else {
+              this.fieldErrors[field] = error;
+            }
             break;
           }
         } catch (e) {
           console.error(e);
-          this.fieldErrors[field] = "Failed to validate";
+          this.fieldErrors[field] = this.defaultMessage(field);
           break;
         }
       }
       if (!this.hasErrors(field)) {
-        this.data[field] = d[field];
+        this.data[field] = (d as TFormData)[field];
       }
     }
+
+    if (signal.aborted) return; // Double check if validation has been cancelled
 
     // form-level validation
     for (const validator of this.formValidators) {
       try {
         const error = await validator(d);
         if (error) {
-          this.formError = error;
+          if (error === true) {
+            throw new Error("Validation failed");
+          } else {
+            this.formError = error;
+          }
           break;
         }
       } catch (e) {
@@ -168,12 +194,14 @@ export class Form<TFormData extends Record<string, any>> {
     // If the 'loose' option is enabled, merge the validated data
     // with the original data so unvalidated fields are preserved
     if (this.loose) {
-      const d = structuredClone(data);
+      const d = structuredClone(data) as TFormData;
       Object.assign(d, this.data);
-      this.data = d as Partial<TFormData>;
+      this.data = d;
     }
 
     if (!this.hasErrors()) this.isValid = true;
+
+    this.lastValidateController = null; // Clear the AbortController reference
   }
 
   hasErrors(field?: keyof TFormData): boolean {
@@ -204,6 +232,14 @@ export class Form<TFormData extends Record<string, any>> {
       throw new Error("Form has errors and cannot be submitted");
     }
     return this.data as TFormData;
+  }
+
+  reset(): void {
+    this.fieldErrors = {};
+    this.submitting = false;
+    this.data = {};
+    this.formError = null;
+    this.isValid = false;
   }
 
   static data(e: SubmitEvent): Record<string, any> {

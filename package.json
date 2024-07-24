@@ -1,12 +1,12 @@
 {
-  "name": "form-lib",
+  "name": "@westbrookdaniel/form",
   "version": "0.1.0",
   "description": "A form library",
   "author": "Daniel Westbrook",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/westbrookdaniel/form-lib.git"
+    "url": "https://github.com/westbrookdaniel/form.git"
   },
   "keywords": [
     "form",
@@ -24,14 +24,18 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "package.json",
+    "README.md"
   ],
   "scripts": {
     "build": "tsup src/index.ts",
     "lint": "eslint src --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
-    "publish": "npm run build && npm publish"
+    "publish": "npm run build && npm publish",
+    "test": "bun test"
   },
   "devDependencies": {
+    "@types/bun": "^1.1.6",
     "@typescript-eslint/eslint-plugin": "^5.61.0",
     "@typescript-eslint/parser": "^5.61.0",
     "eslint": "^8.44.0",
